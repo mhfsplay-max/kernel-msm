@@ -1,0 +1,137 @@
+name: Build Kernel - Moto G52 (rhode)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: MotorolaMobilityLLC/kernel-msm
+          ref: MMI-T2SRS33.72-22-4-1
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
+            python3 zip unzip curl git make zstd
+
+      - name: Download Neutron Clang via AntMan
+        run: |
+          mkdir -p $HOME/neutron-clang
+          cd $HOME/neutron-clang
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+          chmod +x antman
+          ./antman -S=10032024
+
+      - name: Apply optimization patches to defconfig
+        run: |
+          cat arch/arm64/configs/vendor/ext_config/rhode-default.config \
+            >> arch/arm64/configs/vendor/bengal-perf_defconfig
+
+          cat >> arch/arm64/configs/vendor/bengal-perf_defconfig << 'EOF'
+          # Remove debug overhead
+          # CONFIG_DEBUG_INFO is not set
+          # CONFIG_PAGE_OWNER is not set
+
+          # I/O scheduler
+          CONFIG_DEFAULT_IOSCHED="bfq"
+
+          # ZRAM LZ4
+          CONFIG_ZRAM_DEF_COMP="lz4"
+
+          # CPU governor
+          CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+          # CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMAND is not set
+
+          # TCP BBR
+          CONFIG_TCP_CONG_BBR=y
+          CONFIG_NET_SCH_FQ=y
+          CONFIG_DEFAULT_BBR=y
+          EOF
+
+      - name: Build kernel
+        run: |
+          export PATH="$HOME/neutron-clang/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+          export KCFLAGS="-O2 -march=armv8-a+crypto+crc"
+
+          make O=out ARCH=arm64 CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld \
+            vendor/bengal-perf_defconfig
+
+          make O=out ARCH=arm64 CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            -j$(nproc) 2>&1 | tee build.log
+
+      - name: Package with AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel3
+
+          cat > AnyKernel3/anykernel.sh << 'EOF'
+          SKIPUNZIP=1
+          . tools/ak3-core.sh
+
+          assert_device() {
+            ui_print "Checking device..."
+            if ! grep -q "rhode" /proc/cmdline && \
+               ! grep -q "rhode" /system/build.prop 2>/dev/null; then
+              abort "This kernel is for Moto G52 (rhode) only."
+            fi
+            ui_print "Device check passed."
+          }
+
+          assert_device
+
+          ui_print "Installing optimized kernel for Moto G52..."
+
+          if [ -f $AKHOME/Image.gz-dtb ]; then
+            flash_image Image.gz-dtb /dev/block/bootdevice/by-name/boot
+          elif [ -f $AKHOME/Image.gz ]; then
+            flash_image Image.gz /dev/block/bootdevice/by-name/boot
+          else
+            abort "No kernel image found."
+          fi
+
+          ui_print "Done. Reboot to enjoy."
+          EOF
+
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ 2>/dev/null || \
+          cp out/arch/arm64/boot/Image.gz AnyKernel3/ 2>/dev/null || true
+
+          cd AnyKernel3
+          zip -r9 ../kernel-rhode-optimized.zip . -x '*.git*'
+
+      - name: Upload kernel zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-rhode-optimized
+          path: kernel-rhode-optimized.zip
+          retention-days: 7
+
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
