@@ -34,25 +34,21 @@ jobs:
             >> arch/arm64/configs/vendor/bengal-perf_defconfig
 
           cat >> arch/arm64/configs/vendor/bengal-perf_defconfig << 'EOF'
-          # Remove debug overhead
-          # CONFIG_DEBUG_INFO is not set
-          # CONFIG_PAGE_OWNER is not set
-
-          # I/O scheduler
-          CONFIG_DEFAULT_IOSCHED="bfq"
-
-          # ZRAM LZ4
-          CONFIG_ZRAM_DEF_COMP="lz4"
-
-          # CPU governor
-          CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
-          # CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMAND is not set
-
-          # TCP BBR
-          CONFIG_TCP_CONG_BBR=y
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_DEFAULT_BBR=y
-          EOF
+# Remove debug overhead
+# CONFIG_DEBUG_INFO is not set
+# CONFIG_PAGE_OWNER is not set
+# I/O scheduler
+CONFIG_DEFAULT_IOSCHED="bfq"
+# ZRAM LZ4
+CONFIG_ZRAM_DEF_COMP="lz4"
+# CPU governor
+CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y
+# CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMAND is not set
+# TCP BBR
+CONFIG_TCP_CONG_BBR=y
+CONFIG_NET_SCH_FQ=y
+CONFIG_DEFAULT_BBR=y
+EOF
 
       - name: Build kernel
         run: |
